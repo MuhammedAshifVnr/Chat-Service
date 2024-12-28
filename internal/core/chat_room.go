@@ -1,4 +1,3 @@
-// core/chat_room.go
 package core
 
 import (

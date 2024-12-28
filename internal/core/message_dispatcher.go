@@ -1,4 +1,3 @@
-// core/message_dispatcher.go
 package core
 
 import (
