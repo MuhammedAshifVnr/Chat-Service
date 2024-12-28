@@ -4,41 +4,50 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gorilla/mux"
 	"github.com/MuhammedAshifVnr/Chat-Service/internal/core"
 	"github.com/MuhammedAshifVnr/Chat-Service/internal/handlers"
 )
 
 func main() {
-	// Initialize managers
-	userManager := core.NewUserManager()
+	// Initialize core components
 	roomManager := core.NewRoomManager()
+	userManager := core.NewUserManager()
 	messageDispatcher := core.NewMessageDispatcher(roomManager, userManager)
 
-	// Start dispatcher for each room
-	go startRoomDispatchers(roomManager, messageDispatcher)
+	// Initialize handlers
+	chatRoomHandler := handlers.NewChatRoomHandler(roomManager)
+	userHandler := handlers.NewUserHandler(userManager)
+	messageHandler := handlers.NewMessageHandler(messageDispatcher, userManager, roomManager)
 
-	// Initialize router
-	router := mux.NewRouter()
+	// Set up routes
+	mux := http.NewServeMux()
 
-	// Register handlers
-	handlers.RegisterUserHandlers(router, userManager)
-	handlers.RegisterRoomHandlers(router, roomManager)
-	handlers.RegisterMessageHandlers(router, messageDispatcher)
+	// Chat room routes
+	mux.HandleFunc("/rooms", chatRoomHandler.CreateRoomHandler)             // POST /rooms - Create a room
+	mux.HandleFunc("/rooms/list", chatRoomHandler.ListRoomsHandler)        // GET /rooms/list - List all rooms
+	mux.HandleFunc("/rooms/join", chatRoomHandler.JoinRoomHandler)         // POST /rooms/join - Join a room
+	mux.HandleFunc("/rooms/leave", chatRoomHandler.LeaveRoomHandler)       // POST /rooms/leave - Leave a room
+	mux.HandleFunc("/rooms/members", chatRoomHandler.ListMembersHandler)   // GET /rooms/members?room_id=<roomID> - List room members
 
-	// Start HTTP server
-	log.Println("Chat server running on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", router))
-}
+	// User routes
+	mux.HandleFunc("/users", userHandler.CreateUserHandler)                // POST /users - Create a user
+	mux.HandleFunc("/users/get", userHandler.GetUserHandler)               // GET /users/get?id=<userID> - Get user details
+	mux.HandleFunc("/users/update", userHandler.UpdateUserHandler)         // POST /users/update - Update user details
+	mux.HandleFunc("/users/delete", userHandler.DeleteUserHandler)         // DELETE /users/delete?id=<userID> - Delete a user
 
-// Helper to start dispatchers for each room
-func startRoomDispatchers(roomManager *core.RoomManager, dispatcher *core.MessageDispatcher) {
-	var wg sync.WaitGroup
-	roomManager.Rooms.Range(func(_, value interface{}) bool {
-		room := value.(*models.ChatRoom)
-		wg.Add(1)
-		go dispatcher.StartRoomMessageDispatcher(room.ID, &wg)
-		return true
-	})
-	wg.Wait()
+	// Message routes
+	mux.HandleFunc("/messages/broadcast", messageHandler.HandleBroadcastMessage) // POST /messages/broadcast - Broadcast message
+	mux.HandleFunc("/messages/private", messageHandler.HandlePrivateMessage)     // POST /messages/private - Private message
+	mux.HandleFunc("/sse", messageHandler.HandleSSEConnection)                   // GET /sse?user_id=<userID> - SSE connection
+
+	// Start the server
+	server := &http.Server{
+		Addr:    ":8080", // Change to your preferred port
+		Handler: mux,
+	}
+
+	log.Println("Chat service running on http://localhost:8080")
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
