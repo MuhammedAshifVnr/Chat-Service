@@ -2,7 +2,7 @@
 package core
 
 import (
-	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -41,28 +41,27 @@ func (md *MessageDispatcher) BroadcastMessage(roomID, senderID, content string) 
 
 // SendPrivateMessage sends a private message between two users
 func (md *MessageDispatcher) SendPrivateMessage(senderID, receiverID, content string) error {
-	sender, err := md.UserManager.GetUser(senderID)
+	_, err := md.UserManager.GetUser(senderID)
 	if err != nil {
-		return errors.New("sender not found")
+		return fmt.Errorf("sender not found: %v", err)
 	}
 
 	receiver, err := md.UserManager.GetUser(receiverID)
 	if err != nil {
-		return errors.New("receiver not found")
+		return fmt.Errorf("receiver not found: %v", err)
 	}
 
 	message := models.Message{
-		SenderID:   sender.ID,
-		ReceiverID: receiver.ID,
-		Content:    content,
-		Timestamp:  time.Now(),
+		SenderID: senderID,
+		Content:  content,
 	}
 
+	// Send the message to the receiver's private message queue.
 	select {
-	case receiver.MessageQueue <- message:
+	case receiver.PrivateMessageQueue <- message:
 		return nil
 	default:
-		return errors.New("receiver's message queue is full")
+		return fmt.Errorf("receiver's message queue is full")
 	}
 }
 

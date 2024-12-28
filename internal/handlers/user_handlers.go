@@ -34,8 +34,14 @@ func (uh *UserHandler) CreateUserHandler(w http.ResponseWriter, r *http.Request)
 
 	user := uh.UserManager.AddUser(req.DisplayName)
 	log.Printf("User created with ID: %s, DisplayName: %s", user.ID, user.DisplayName)
-
-	respondJSON(w, http.StatusCreated, user)
+	response := struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"display_name"`
+	}{
+		ID:          user.ID,
+		DisplayName: user.DisplayName,
+	}
+	respondJSON(w, http.StatusCreated, response)
 }
 
 // GetUserHandler retrieves user details by ID.
@@ -55,9 +61,15 @@ func (uh *UserHandler) GetUserHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
 		return
 	}
-
+	response := struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"display_name"`
+	}{
+		ID:          user.ID,
+		DisplayName: user.DisplayName,
+	}
 	log.Printf("User details fetched for ID: %s", userID)
-	respondJSON(w, http.StatusOK, user)
+	respondJSON(w, http.StatusOK, response)
 }
 
 // UpdateUserHandler updates a user's display name.

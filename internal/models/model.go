@@ -7,10 +7,11 @@ import (
 )
 
 type User struct {
-	ID           string              // Unique User ID
-	DisplayName  string              // User's display name
-	MessageQueue chan Message        // Channel to receive messages
-	SSEWriter    http.ResponseWriter // SSE connection for sending messages
+	ID                  string       // Unique User ID
+	DisplayName         string       // User's display name
+	MessageQueue        chan Message // Channel to receive messages
+	PrivateMessageQueue chan Message
+	SSEWriter           http.ResponseWriter // SSE connection for sending messages
 }
 
 type MemberInfo struct {

@@ -78,9 +78,7 @@ func (h *MessageHandler) HandlePrivateMessage(w http.ResponseWriter, r *http.Req
 	}
 
 	log.Printf("Private message sent from user %s to user %s", req.SenderID, req.ReceiverID)
-	respondJSON(w, http.StatusOK, map[string]string{
-		"message": "Private message sent successfully",
-	})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Private message sent successfully"})
 }
 
 // HandleSSEConnection handles the Server-Sent Events connection for real-time updates.
