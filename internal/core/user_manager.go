@@ -19,16 +19,30 @@ func NewUserManager() *UserManager {
 }
 
 // AddUser adds a new user and returns the user object
-func (um *UserManager) AddUser(displayName string) *models.User {
+func (um *UserManager) AddUser(displayName string) (*models.User, error) {
+	var exists bool
+	um.Users.Range(func(_, value interface{}) bool {
+		user := value.(*models.User)
+		if user.DisplayName == displayName {
+			exists = true
+			return false 
+		}
+		return true
+	})
+
+	if exists {
+		return nil, errors.New("display name already taken")
+	}
 	rand.Seed(time.Now().UnixNano())
 	userID := fmt.Sprintf("%06d", rand.Intn(1000000))
 	user := &models.User{
 		ID:           userID,
 		DisplayName:  displayName,
 		MessageQueue: make(chan models.Message, 1000),
+		PrivateMessageQueue: make(chan models.Message, 1000),
 	}
 	um.Users.Store(userID, user)
-	return user
+	return user, nil
 }
 
 // GetUser fetches a user by ID
@@ -63,4 +77,24 @@ func (um *UserManager) UpdateDisplayName(userID string, newName string) error {
 // DisconnectUser handles user cleanup when they disconnect
 func (um *UserManager) DisconnectUser(userID string) error {
 	return um.RemoveUser(userID)
+}
+
+func (um *UserManager) GetAllUsers() ([]*models.User, error) {
+	var users []*models.User
+
+	// Iterate over the sync.Map to collect all users
+	um.Users.Range(func(_, value interface{}) bool {
+		user, ok := value.(*models.User)
+		if ok {
+			users = append(users, user)
+		}
+		return true // Continue iteration
+	})
+
+	// Return error if no users found
+	if len(users) == 0 {
+		return nil, errors.New("no users found")
+	}
+
+	return users, nil
 }

@@ -2,6 +2,8 @@ package core
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"sync"
 )
 
@@ -14,12 +16,12 @@ func NewRoomManager() *RoomManager {
 }
 
 // CreateRoom creates a new chat room with the given name.
-func (rm *RoomManager) CreateRoom(name string) (*ChatRoom, error) {
+func (rm *RoomManager) CreateRoom(name, admin string) (*ChatRoom, error) {
 	if name == "" {
 		return nil, errors.New("room name cannot be empty")
 	}
 
-	newRoom := NewChatRoom(name, name)
+	newRoom := NewChatRoom(name, name, admin)
 
 	_, loaded := rm.Rooms.LoadOrStore(name, newRoom)
 	if loaded {
@@ -47,23 +49,19 @@ func (rm *RoomManager) ListRooms() []string {
 }
 
 // DeleteRoom deletes a room by name if it exists and is empty.
-func (rm *RoomManager) DeleteRoom(name string) error {
+func (rm *RoomManager) DeleteRoom(name, admin string) error {
 	room, err := rm.GetRoom(name)
 	if err != nil {
 		return err
 	}
-
-	var isEmpty = true
-	room.Members.Range(func(_, _ interface{}) bool {
-		isEmpty = false
-		return false
-	})
-
-	if !isEmpty {
-		return errors.New("cannot delete room with active members")
+	fmt.Println("==",room.Admin)
+	if room.Admin != admin {
+		return fmt.Errorf("admin not maching")
 	}
-
+	
+	close(room.Done) // Signal the goroutine to stop
 	rm.Rooms.Delete(name)
-	close(room.Broadcast)
+	log.Printf("Room %s deleted.", name)
+
 	return nil
 }

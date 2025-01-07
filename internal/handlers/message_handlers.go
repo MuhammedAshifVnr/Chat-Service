@@ -122,7 +122,57 @@ func (h *MessageHandler) HandleSSEConnection(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			// Write the message to the SSE stream.
-			if err := utils.WriteSSE(w, "message", msg.Content); err != nil {
+			if err := utils.WriteSSE(w, msg.SenderID, msg.Content, msg.Timestamp.String()); err != nil {
+				log.Printf("Error writing SSE message for user %s: %v", userID, err)
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+func (h *MessageHandler) HandlePrivateSSEConnection(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received request to establish a private SSE connection")
+
+	// Get the user_id from the URL parameters
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		log.Println("Missing user_id parameter in SSE connection")
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing user_id parameter"})
+		return
+	}
+
+	// Fetch the user.
+	user, err := h.UserManager.GetUser(userID)
+	if err != nil {
+		log.Printf("User not found for SSE connection: %s", userID)
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+		return
+	}
+
+	// Configure headers for SSE.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		log.Println("Streaming not supported in SSE connection")
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Listen to the user's private message queue.
+	log.Printf("Private SSE connection established for user %s", userID)
+
+	for {
+		select {
+		case msg, ok := <-user.PrivateMessageQueue:
+			if !ok {
+				log.Printf("Message queue closed for user %s", userID)
+				return
+			}
+			// Write the message to the SSE stream
+			if err := utils.WriteSSE(w, msg.SenderID, msg.Content, msg.Timestamp.String()); err != nil {
 				log.Printf("Error writing SSE message for user %s: %v", userID, err)
 				return
 			}

@@ -11,11 +11,12 @@ import (
 // UserHandler manages user-related operations.
 type UserHandler struct {
 	UserManager *core.UserManager
+	RoomManager *core.RoomManager
 }
 
 // NewUserHandler initializes a new UserHandler.
-func NewUserHandler(um *core.UserManager) *UserHandler {
-	return &UserHandler{UserManager: um}
+func NewUserHandler(um *core.UserManager, rm *core.RoomManager) *UserHandler {
+	return &UserHandler{UserManager: um, RoomManager: rm}
 }
 
 // CreateUserHandler handles user creation.
@@ -32,7 +33,12 @@ func (uh *UserHandler) CreateUserHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	user := uh.UserManager.AddUser(req.DisplayName)
+	user, err := uh.UserManager.AddUser(req.DisplayName)
+	if err != nil {
+		log.Printf("display name already exist: %v", err)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "display name already taken"})
+		return
+	}
 	log.Printf("User created with ID: %s, DisplayName: %s", user.ID, user.DisplayName)
 	response := struct {
 		ID          string `json:"id"`
@@ -108,8 +114,17 @@ func (uh *UserHandler) DeleteUserHandler(w http.ResponseWriter, r *http.Request)
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing user ID"})
 		return
 	}
-
-	err := uh.UserManager.RemoveUser(userID)
+	user, err := uh.UserManager.GetUser(userID)
+	if err != nil {
+		log.Printf("User not found: %s", userID)
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+		return
+	}
+	if user.RoomIn != "" {
+		room, _ := uh.RoomManager.GetRoom(user.RoomIn)
+		room.RemoveMember(userID)
+	}
+	err = uh.UserManager.RemoveUser(userID)
 	if err != nil {
 		log.Printf("Failed to delete user: %v", err)
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
@@ -118,4 +133,31 @@ func (uh *UserHandler) DeleteUserHandler(w http.ResponseWriter, r *http.Request)
 
 	log.Printf("User deleted: ID %s", userID)
 	respondJSON(w, http.StatusOK, map[string]string{"message": "User deleted successfully"})
+}
+
+func (uh *UserHandler) GetAllUsersHandler(w http.ResponseWriter, r *http.Request) {
+	// Log the request for debugging purposes
+	log.Println("Received request to fetch all users")
+	// Fetch all users from UserManager
+	users, err := uh.UserManager.GetAllUsers()
+	if err != nil {
+		log.Println("No users found")
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "No users found"})
+		return
+	}
+
+	// Transform the user data into a response format
+	response := make([]map[string]string, 0, len(users))
+	for _, user := range users {
+		response = append(response, map[string]string{
+			"id":           user.ID,
+			"display_name": user.DisplayName,
+		})
+	}
+
+	// Log successful retrieval
+	log.Printf("Fetched %d users", len(response))
+
+	// Send response with status 200
+	respondJSON(w, http.StatusOK, response)
 }

@@ -10,13 +10,17 @@ import (
 
 // ChatRoomHandler holds the RoomManager instance for managing chat rooms.
 type ChatRoomHandler struct {
-	RoomManager *core.RoomManager
+	RoomManager       *core.RoomManager
+	UserManager       *core.UserManager
+	MessageDispatcher *core.MessageDispatcher
 }
 
 // NewChatRoomHandler initializes a new ChatRoomHandler.
-func NewChatRoomHandler(roomManager *core.RoomManager) *ChatRoomHandler {
+func NewChatRoomHandler(roomManager *core.RoomManager, md *core.MessageDispatcher, um *core.UserManager) *ChatRoomHandler {
 	return &ChatRoomHandler{
-		RoomManager: roomManager,
+		RoomManager:       roomManager,
+		MessageDispatcher: md,
+		UserManager:       um,
 	}
 }
 
@@ -34,27 +38,28 @@ func (h *ChatRoomHandler) CreateRoomHandler(w http.ResponseWriter, r *http.Reque
 	log.Println("Received request to create a new room")
 
 	var req struct {
-		Name string `json:"name"`
+		Name  string `json:"name"`
+		Admin string `json:"admin"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Admin == "" {
 		log.Printf("Invalid room name: %v", err)
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid room name"})
 		return
 	}
 
-	room, err := h.RoomManager.CreateRoom(req.Name)
+	room, err := h.RoomManager.CreateRoom(req.Name, req.Admin)
 	if err != nil {
 		log.Printf("Failed to create room: %v", err)
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-
+	go h.MessageDispatcher.StartRoomMessageDispatcher(room.ID)
 	log.Printf("Room created successfully: %s", room.ID)
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"room_id":  room.ID,
-		"name":     room.Name,
-		"message":  "Room created successfully",
+		"room_id": room.ID,
+		"name":    room.Name,
+		"message": "Room created successfully",
 	})
 }
 
@@ -72,12 +77,11 @@ func (h *ChatRoomHandler) JoinRoomHandler(w http.ResponseWriter, r *http.Request
 	log.Println("Received request to join a room")
 
 	var req struct {
-		RoomID      string `json:"room_id"`
-		UserID      string `json:"user_id"`
-		DisplayName string `json:"display_name"`
+		RoomID string `json:"room_id"`
+		UserID string `json:"user_id"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RoomID == "" || req.UserID == "" || req.DisplayName == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RoomID == "" || req.UserID == "" {
 		log.Printf("Invalid input for joining room: %v", err)
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid input"})
 		return
@@ -89,9 +93,26 @@ func (h *ChatRoomHandler) JoinRoomHandler(w http.ResponseWriter, r *http.Request
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Room not found"})
 		return
 	}
+	if _, exists := room.Members.Load(req.UserID); exists {
+		log.Printf("User %s is already in room %s", req.UserID, req.RoomID)
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "User already in room"})
+		return
+	}
 
-	room.AddMember(req.UserID, req.DisplayName)
-	log.Printf("User %s joined room %s", req.DisplayName, req.RoomID)
+	user, err := h.UserManager.GetUser(req.UserID)
+	if err != nil || user == nil {
+		log.Printf("User not found: %s", req.UserID)
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+		return
+	}
+	if user.RoomIn != "" {
+		log.Printf("User %s is already in Joined %s room", req.UserID, user.RoomIn)
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "User already Joined in aonther room. Romm_ID : " + room.ID})
+		return
+	}
+	user.RoomIn = room.ID
+	room.AddMember(req.UserID, user.DisplayName)
+	log.Printf("User %s joined room %s", user.DisplayName, req.RoomID)
 	respondJSON(w, http.StatusOK, map[string]string{
 		"message": "User joined the room successfully",
 	})
@@ -120,6 +141,13 @@ func (h *ChatRoomHandler) LeaveRoomHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	room.RemoveMember(req.UserID)
+	user, err := h.UserManager.GetUser(req.UserID)
+	if err != nil {
+		log.Printf("User not found: %s", req.UserID)
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+		return
+	}
+	user.RoomIn = ""
 	log.Printf("User %s left room %s", req.UserID, req.RoomID)
 	respondJSON(w, http.StatusOK, map[string]string{
 		"message": "User left the room successfully",
@@ -147,4 +175,34 @@ func (h *ChatRoomHandler) ListMembersHandler(w http.ResponseWriter, r *http.Requ
 	members := room.ListMembers()
 	log.Printf("Members in room %s: %d", roomID, len(members))
 	respondJSON(w, http.StatusOK, members)
+}
+
+// DeleteRoomHandler handles HTTP requests to delete a room by admin.
+func (h *ChatRoomHandler) DeleteRoomHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received request to delete a room")
+	var req struct {
+		RoomID string `json:"room_id"`
+		Admin  string `json:"admin"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RoomID == "" || req.Admin == "" {
+		log.Printf("Invalid input for deleting room: %v", err)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid input"})
+		return
+	}
+
+	err := h.RoomManager.DeleteRoom(req.RoomID, req.Admin)
+	if err != nil {
+		log.Printf("Failed to delete room %s: %v", req.RoomID, err)
+
+		if err.Error() == "admin not maching" {
+			respondJSON(w, http.StatusForbidden, map[string]string{"error": "Admin does not match"})
+		} else {
+			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Room not found"})
+		}
+		return
+	}
+
+	log.Printf("Room %s deleted by admin %s", req.RoomID, req.Admin)
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Room deleted successfully"})
 }

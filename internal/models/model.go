@@ -1,7 +1,6 @@
 package models
 
 import (
-	"net/http"
 	"sync"
 	"time"
 )
@@ -11,7 +10,7 @@ type User struct {
 	DisplayName         string       // User's display name
 	MessageQueue        chan Message // Channel to receive messages
 	PrivateMessageQueue chan Message
-	SSEWriter           http.ResponseWriter // SSE connection for sending messages
+	RoomIn              string
 }
 
 type MemberInfo struct {
@@ -24,6 +23,8 @@ type ChatRoom struct {
 	Name      string       // Room Name
 	Members   sync.Map     // Thread-safe map of members (key: userID, value: MemberInfo)
 	Broadcast chan Message // Broadcast message channel
+	Admin     string
+	Done      chan struct{}
 }
 
 type Message struct {
@@ -34,14 +35,14 @@ type Message struct {
 	Timestamp  time.Time // Time of the message
 }
 
-func (r *ChatRoom) ListMembers() []string {
-	var members []string
+// func (r *ChatRoom) ListMembers() []string {
+// 	var members []string
 
-	// Iterate through all members in the sync.Map.
-	r.Members.Range(func(key, value interface{}) bool {
-		members = append(members, value.(string)) // Assuming value is the display name.
-		return true
-	})
+// 	// Iterate through all members in the sync.Map.
+// 	r.Members.Range(func(key, value interface{}) bool {
+// 		members = append(members, value.(string)) // Assuming value is the display name.
+// 		return true
+// 	})
 
-	return members
-}
+// 	return members
+// }

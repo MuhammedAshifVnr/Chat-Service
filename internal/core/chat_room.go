@@ -11,19 +11,22 @@ type ChatRoom struct {
 }
 
 // NewChatRoom creates a new chat room instance
-func NewChatRoom(id, name string) *ChatRoom {
+func NewChatRoom(id, name,admin string) *ChatRoom {
 	return &ChatRoom{
 		ChatRoom: models.ChatRoom{
 			ID:        id,
 			Name:      name,
+			Admin: admin,
 			Members:   sync.Map{},
-			Broadcast: make(chan models.Message, 100), // Buffered channel for efficient broadcasting
+			Broadcast: make(chan models.Message, 1000), // Buffered channel for efficient broadcasting
+			Done:      make(chan struct{}),
 		},
 	}
 }
 
 // AddMember adds a user to the chat room
 func (cr *ChatRoom) AddMember(userID, displayName string) {
+	
 	cr.Members.Store(userID, models.MemberInfo{
 		UserID:      userID,
 		DisplayName: displayName,
@@ -46,11 +49,11 @@ func (cr *ChatRoom) ListMembers() []models.MemberInfo {
 }
 
 // SendBroadcast sends a message to the chat room's broadcast channel
-func (cr *ChatRoom) SendBroadcast(message models.Message) {
-	select {
-	case cr.Broadcast <- message:
-		// Message sent successfully
-	default:
-		// Drop the message if the broadcast channel is full
-	}
-}
+// func (cr *ChatRoom) SendBroadcast(message models.Message) {
+// 	select {
+// 	case cr.Broadcast <- message:
+// 		// Message sent successfully
+// 	default:
+// 		// Drop the message if the broadcast channel is full
+// 	}
+// }
